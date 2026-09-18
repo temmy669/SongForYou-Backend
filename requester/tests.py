@@ -199,3 +199,45 @@ class VenueFeedTests(APITestCase):
         row = self.client.get(self.url()).data[0]
         self.assertNotIn('is_anonymous', row)
         self.assertNotIn('custom_message', row)
+
+
+class PublicSessionTests(APITestCase):
+    """An attendee who scanned a QR code, before sending anything."""
+
+    def setUp(self):
+        self.dj = make_user('dj', 'dj_sam')
+        self.session = Session.objects.create(
+            dj=self.dj, dj_name='Sam', venue_name='The Loft'
+        )
+
+    def url(self, sid=None):
+        return f'/api/sessions/{sid or self.session.id}/public/'
+
+    def test_readable_without_a_token(self):
+        res = self.client.get(self.url())
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['venue_name'], 'The Loft')
+        self.assertEqual(res.data['dj_name'], 'Sam')
+        self.assertTrue(res.data['is_active'])
+
+    def test_ended_session_returns_200_not_404(self):
+        """The page must distinguish 'ended' from 'wrong link'."""
+        self.session.is_active = False
+        self.session.save()
+        res = self.client.get(self.url())
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['is_active'])
+
+    def test_unknown_session_is_404(self):
+        import uuid
+        self.assertEqual(
+            self.client.get(self.url(uuid.uuid4())).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_leaks_nothing_beyond_the_poster(self):
+        """No DJ account, no request history, no counts."""
+        self.assertEqual(
+            set(self.client.get(self.url()).data.keys()),
+            {'id', 'dj_name', 'venue_name', 'is_active'},
+        )

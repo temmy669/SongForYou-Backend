@@ -4,6 +4,7 @@ from .views import (
     DJQueueView,
     DJRequestUpdateView,
     MyRequestsView,
+    PublicSessionView,
     VenueFeedView,
     SessionDetailView,
     SessionView,
@@ -16,6 +17,7 @@ from .views import (
 
 urlpatterns = [
     path('sessions/', SessionView.as_view(), name='sessions'),
+    path('sessions/<uuid:id>/public/', PublicSessionView.as_view(), name='public-session'),
     path('sessions/<uuid:id>/deactivate/', SetInactiveSessionView.as_view(), name='deactivate-session'),
     path('sessions/<uuid:id>/', SessionDetailView.as_view(), name='session-detail'),
     path('requests/', SongRequestView.as_view(), name='song-request'),

@@ -118,8 +118,10 @@ SOCIALACCOUNT_LOGIN_ON_GET = True
 SOCIALACCOUNT_STORE_TOKENS = True
 ACCOUNT_SIGNUP_REDIRECT_URL = '/dashboard/'
 
-_FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
-SOCIALACCOUNT_AUTHENTICATION_ERROR_URL = f'{_FRONTEND_URL}/?auth_error=true'
+# A failed Spotify login is redirected back to the frontend by
+# SpotifySocialAdapter.on_authentication_error. There is no allauth setting for
+# this — the adapter hook is the only way — and the reason is written to the
+# 'requester' logger below.
 
 SOCIALACCOUNT_PROVIDERS = {
     'spotify': {
@@ -292,6 +294,35 @@ STORAGES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Logging
+# Render captures stdout, so a console handler is what makes errors visible in
+# the service log. Without this, Django swallows logger output in production and
+# a failed OAuth round-trip leaves no trace at all.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {'format': '[{levelname}] {name}: {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        # Why a social login failed, and the request that caused it.
+        'requester': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'allauth': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        # Surfaces 4xx/5xx that Django would otherwise only show with DEBUG.
+        'django.request': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+    },
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

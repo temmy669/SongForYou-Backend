@@ -1,10 +1,56 @@
+import logging
 import re
+from urllib.parse import urlencode
+
+from allauth.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from decouple import config
+from django.http import HttpResponseRedirect
 from django.utils.text import slugify
+
 from .models import UserProfile
 
+logger = logging.getLogger(__name__)
+
+
 class SpotifySocialAdapter(DefaultSocialAccountAdapter):
-    
+
+    def on_authentication_error(
+        self,
+        request,
+        provider,
+        error=None,
+        exception=None,
+        extra_context=None,
+    ):
+        """
+        Send a failed Spotify login back to the frontend, and log why.
+
+        allauth's own behaviour is to render a bare 'Third-Party Login Failure'
+        page with no explanation and no way back into the app. There is no
+        setting that changes this — SOCIALACCOUNT_AUTHENTICATION_ERROR_URL is
+        not a real allauth setting, despite reading like one — so the redirect
+        has to happen here.
+
+        The full error is logged server-side; only the short OAuth error code
+        travels to the frontend, since `extra_context` can carry request and
+        token details that should not end up in a URL or browser history.
+        """
+        logger.error(
+            'Spotify login failed: provider=%s error=%s exception=%r context=%s',
+            getattr(provider, 'id', provider),
+            error,
+            exception,
+            extra_context,
+        )
+
+        frontend_url = config('FRONTEND_URL', default='http://localhost:3000')
+        params = {'auth_error': error or 'unknown'}
+        raise ImmediateHttpResponse(
+            HttpResponseRedirect(f'{frontend_url}/?{urlencode(params)}')
+        )
+
+
     def save_user(self, request, sociallogin, form=None):
         """
         This method is called when a user logs in via Spotify for the first time.

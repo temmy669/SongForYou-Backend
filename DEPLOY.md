@@ -1,5 +1,7 @@
 # Deploying songForyou to Render
 
+**Live backend:** https://songforyou-p88e.onrender.com
+
 The backend deploys from [`render.yaml`](render.yaml) as a Render Blueprint: a
 single web service. The database is **Neon**, provisioned separately, so Render
 creates no Postgres instance — there is no `databases:` block in the blueprint.
@@ -77,7 +79,7 @@ development:
 
 ```
 http://localhost:8000/accounts/spotify/login/callback/
-https://<your-service>.onrender.com/accounts/spotify/login/callback/
+https://songforyou-p88e.onrender.com/accounts/spotify/login/callback/
 ```
 
 The path must match exactly, trailing slash included.
@@ -96,7 +98,7 @@ You do not need to run migrations here.
 ## 5. Verify
 
 ```bash
-curl https://<your-service>.onrender.com/health/
+curl https://songforyou-p88e.onrender.com/health/
 # {"status": "ok"}
 ```
 

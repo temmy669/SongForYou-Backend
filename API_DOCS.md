@@ -43,6 +43,7 @@ Authorization: Token <token>
 | `POST /api/requests/` | `GET/POST /api/sessions/` |
 | `GET /api/users/search/` | `GET/DELETE /api/sessions/<id>/` |
 | `GET /api/search/` | `POST/PATCH /api/sessions/<id>/deactivate/` |
+| `GET /api/sessions/<id>/public/` | |
 | | `GET /api/requests/me/` |
 | | `GET /api/notifications/` |
 | | `PATCH /api/requests/<id>/` |
@@ -67,6 +68,31 @@ Authorization: Token <token>
 
 A malformed `session_id` query parameter returns **`400`**, not `404`:
 `{"error": "session_id must be a valid UUID."}`
+
+---
+
+# Session info (attendee)
+
+`GET /api/sessions/<uuid>/public/` — **no auth**.
+
+What someone who just scanned the QR code is allowed to know. Use it to confirm
+the session is real and live before showing the request form, and to name the
+room back to them.
+
+```json
+{ "id": "uuid", "dj_name": "Sam", "venue_name": "The Loft", "is_active": true }
+```
+
+Deliberately minimal — it exposes only what is already printed on the code
+the attendee scanned. No DJ account, no request history, no counts.
+
+An **ended** session returns `200` with `"is_active": false`, not `404`, so the
+frontend can say *"this session has ended"* rather than *"that link is wrong"*.
+A session that does not exist returns `404`.
+
+> Attendees cannot read `GET /api/sessions/<id>/` (owner-only) or
+> `GET /api/venue/feed/` (owner-only). This is the only session endpoint they
+> can call.
 
 ---
 

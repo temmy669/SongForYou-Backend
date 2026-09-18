@@ -14,6 +14,7 @@ from .serializers import (
     DJStatusUpdateSerializer,
     NotificationInboxSerializer,
     PublicRequestSerializer,
+    PublicSessionSerializer,
     RecipientRequestSerializer,
     SessionSerializer,
     SongRequestSerializer,
@@ -105,6 +106,25 @@ _TRIGGER_MESSAGES = {
     'thought': "Someone listened to '{song_title}' by {artist_name} and thought about you",
     'reminded': "'{song_title}' by {artist_name} reminded someone of you",
 }
+
+class PublicSessionView(APIView):
+    """
+    Minimal session info for an attendee who has just scanned the QR code.
+
+    Unauthenticated by necessity: senders never log in. It exposes only what is
+    already printed on the code they scanned - the venue and the DJ's stage name
+    - so the request page can confirm the session is real and name the room.
+
+    An ended session returns 200 with is_active=false rather than 404, so the
+    frontend can say "this session has ended" instead of "that link is wrong".
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, id):
+        session = get_object_or_404(Session, id=id)
+        return Response(PublicSessionSerializer(session).data)
+
 
 class SetInactiveSessionView(APIView):
     permission_classes = [IsAuthenticated]

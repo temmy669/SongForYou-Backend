@@ -9,6 +9,20 @@ class SessionSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'is_active', 'created_at']
 
 
+class PublicSessionSerializer(serializers.ModelSerializer):
+    """
+    What an attendee is allowed to know about a session before sending anything.
+
+    Deliberately minimal: enough to confirm they scanned a real, live code and
+    to name the room back to them. No DJ account, no request history.
+    """
+
+    class Meta:
+        model = Session
+        fields = ['id', 'dj_name', 'venue_name', 'is_active']
+        read_only_fields = fields
+
+
 class SongRequestSerializer(serializers.ModelSerializer):
     """
     Two recipient paths, chosen by the sender via `knows_handle`.
