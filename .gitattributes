@@ -1,0 +1,7 @@
+# Normalise text files in the repo.
+* text=auto
+
+# Shell scripts MUST stay LF. Git on Windows would otherwise commit build.sh
+# with CRLF, and Linux then fails the shebang with a confusing
+# "bad interpreter: No such file or directory" on every Render deploy.
+*.sh text eol=lf

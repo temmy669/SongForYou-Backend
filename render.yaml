@@ -1,0 +1,73 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Create the stack from this file via Render Dashboard -> New -> Blueprint.
+# Values marked `sync: false` are deliberately NOT stored here: Render prompts
+# for them on first deploy and keeps them out of the repo. Never inline the
+# Spotify secret in this file.
+
+# The database is Neon, provisioned outside Render, so there is no `databases:`
+# block here. DATABASE_URL is set manually — see DEPLOY.md.
+
+services:
+  - type: web
+    name: songforyou
+    runtime: python
+    plan: free
+    region: oregon
+
+    buildCommand: "bash ./build.sh"
+    startCommand: >-
+      gunicorn songforyou.wsgi:application
+      --bind 0.0.0.0:$PORT
+      --workers 3
+      --timeout 60
+
+    # Django serves this at /health/ and it touches the database, so a web
+    # process that is up but cannot reach Postgres is reported unhealthy
+    # instead of silently serving errors.
+    healthCheckPath: /health/
+
+    envVars:
+      # Neon connection string, copied from the Neon console. Use the POOLED
+      # endpoint (the host containing '-pooler'). Must include ?sslmode=require.
+      # Secret — never commit it, which is why this is sync: false.
+      - key: DATABASE_URL
+        sync: false
+
+      # Generated once by Render and never shown in the repo.
+      - key: SECRET_KEY
+        generateValue: true
+
+      - key: DEBUG
+        value: "False"
+
+      # Start at 0 for the first deploy. HSTS is CACHED BY BROWSERS and cannot
+      # be undone by redeploying — raise to 3600, confirm HTTPS everywhere, and
+      # only then go to 31536000.
+      - key: SECURE_HSTS_SECONDS
+        value: "0"
+
+      # ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS may be left blank on the first
+      # deploy: settings.py trusts RENDER_EXTERNAL_HOSTNAME automatically. Fill
+      # them in once a custom domain is attached.
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+
+      # Must be set before the frontend can call the API cross-origin.
+      # Scheme required, e.g. https://songforyou.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # Where /dashboard/ sends the user after Spotify login, with the token.
+      - key: FRONTEND_URL
+        sync: false
+
+      # From https://developer.spotify.com/dashboard — the redirect URI
+      # registered there must be:
+      #   https://<your-render-host>/accounts/spotify/login/callback/
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
