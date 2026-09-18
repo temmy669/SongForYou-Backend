@@ -1,3 +1,4 @@
+from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 from django.contrib import admin
 from django.contrib.auth.decorators import login_required
 from django.db import connection
@@ -5,6 +6,8 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import include, path
 from decouple import config
 from rest_framework.authtoken.models import Token
+
+from requester.adapters import NotesSpotifyOAuth2Adapter
 
 
 def health(request):
@@ -47,6 +50,23 @@ def dashboard(request):
 urlpatterns = [
     path('health/', health, name='health'),
     path('admin/', admin.site.urls),
+
+    # Our Spotify callback must be registered BEFORE allauth's, because Django
+    # resolves URLs in order and the first match wins.
+    #
+    # Swapping the provider's `oauth2_adapter_class` does not work here:
+    # allauth binds the callback view at import time with
+    # `OAuth2CallbackView.adapter_view(SpotifyOAuth2Adapter)`, and that closure
+    # keeps the original class no matter what the provider says later. Claiming
+    # the route is the only injection point that actually takes effect.
+    #
+    # The path is identical to allauth's, so `reverse('spotify_callback')`
+    # produces the same redirect URI either way.
+    path(
+        'accounts/spotify/login/callback/',
+        OAuth2CallbackView.adapter_view(NotesSpotifyOAuth2Adapter),
+        name='spotify_callback',
+    ),
     path('accounts/', include('allauth.urls')),
     path('api/', include('requester.urls')),
     path('dashboard/', dashboard, name='dashboard'),

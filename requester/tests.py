@@ -1,6 +1,11 @@
 """Tests for recipient resolution and dedication privacy."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from django.contrib.auth.models import User
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -241,3 +246,86 @@ class PublicSessionTests(APITestCase):
             set(self.client.get(self.url()).data.keys()),
             {'id', 'dj_name', 'venue_name', 'is_active'},
         )
+
+
+class SpotifyProfileFetchTests(TestCase):
+    """
+    The Spotify profile fetch, which allauth's own adapter gets wrong.
+
+    Stock allauth sends the token as a query parameter and never checks the
+    response status, so any error body reaches extract_uid() and surfaces as
+    `KeyError: 'id'` — a 500 with the real reason thrown away.
+    """
+
+    def setUp(self):
+        from requester.adapters import NotesSpotifyOAuth2Adapter
+        self.adapter = NotesSpotifyOAuth2Adapter(None)
+        self.token = SimpleNamespace(token='spotify-access-token')
+
+    def _patch_session(self, response):
+        session = MagicMock()
+        session.__enter__ = MagicMock(return_value=session)
+        session.__exit__ = MagicMock(return_value=False)
+        session.get = MagicMock(return_value=response)
+
+        adapter = MagicMock()
+        adapter.get_requests_session = MagicMock(return_value=session)
+        return patch('requester.adapters.get_adapter', return_value=adapter), session
+
+    def test_token_is_sent_as_a_bearer_header(self):
+        """Spotify wants the token in a header, not the query string."""
+        response = MagicMock(ok=True)
+        response.json.return_value = {'id': 'sp_1', 'display_name': 'Sam'}
+        patcher, session = self._patch_session(response)
+
+        with patcher:
+            with patch.object(
+                type(self.adapter), 'get_provider'
+            ) as get_provider:
+                get_provider.return_value.sociallogin_from_response.return_value = 'login'
+                self.adapter.complete_login(None, None, self.token)
+
+        _, kwargs = session.get.call_args
+        self.assertEqual(
+            kwargs['headers'], {'Authorization': 'Bearer spotify-access-token'}
+        )
+        self.assertNotIn('params', kwargs)
+
+    def test_development_mode_rejection_becomes_a_readable_error(self):
+        """
+        A Spotify app in Development Mode only admits allow-listed accounts.
+        That must reach the DJ as a message, not a KeyError.
+        """
+        response = MagicMock(ok=False, status_code=403)
+        response.json.return_value = {
+            'error': {
+                'status': 403,
+                'message': 'User not registered in the Developer Dashboard',
+            }
+        }
+        patcher, _ = self._patch_session(response)
+
+        with patcher:
+            with self.assertRaises(OAuth2Error) as ctx:
+                self.adapter.complete_login(None, None, self.token)
+
+        self.assertIn('Developer Dashboard', str(ctx.exception))
+
+    def test_non_json_error_body_does_not_crash(self):
+        response = MagicMock(ok=False, status_code=502)
+        response.json.side_effect = ValueError('not json')
+        response.text = '<html>Bad Gateway</html>'
+        patcher, _ = self._patch_session(response)
+
+        with patcher:
+            with self.assertRaises(OAuth2Error):
+                self.adapter.complete_login(None, None, self.token)
+
+    def test_ok_response_missing_id_is_an_error_not_a_keyerror(self):
+        response = MagicMock(ok=True)
+        response.json.return_value = {'display_name': 'Sam'}
+        patcher, _ = self._patch_session(response)
+
+        with patcher:
+            with self.assertRaises(OAuth2Error):
+                self.adapter.complete_login(None, None, self.token)

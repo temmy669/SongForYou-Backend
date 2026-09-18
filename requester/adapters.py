@@ -2,8 +2,10 @@ import logging
 import re
 from urllib.parse import urlencode
 
-from allauth.exceptions import ImmediateHttpResponse
-from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from allauth.core.exceptions import ImmediateHttpResponse
+from allauth.socialaccount.adapter import DefaultSocialAccountAdapter, get_adapter
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
+from allauth.socialaccount.providers.spotify.views import SpotifyOAuth2Adapter
 from decouple import config
 from django.http import HttpResponseRedirect
 from django.utils.text import slugify
@@ -11,6 +13,62 @@ from django.utils.text import slugify
 from .models import UserProfile
 
 logger = logging.getLogger(__name__)
+
+
+class NotesSpotifyOAuth2Adapter(SpotifyOAuth2Adapter):
+    """
+    Replaces allauth's Spotify profile fetch, which fails in two ways.
+
+    1. It sends the access token as a QUERY PARAMETER
+       (`params={"access_token": ...}`). Spotify's Web API expects it in an
+       Authorization header, exactly as requester/utils.py already does for
+       track search.
+
+    2. It never checks the response status. It calls .json() on whatever comes
+       back and hands it to extract_uid(), which does data["id"] — so any error
+       body from Spotify surfaces as `KeyError: 'id'` and a 500, with the real
+       reason discarded.
+
+    Spotify returns a perfectly good explanation in that body. A new app is in
+    Development Mode and only admits accounts listed under User Management;
+    everyone else gets 403 "User not registered in the Developer Dashboard".
+    That is a configuration problem the DJ can fix, so it needs to reach them
+    as a message rather than a stack trace.
+    """
+
+    def complete_login(self, request, app, token, **kwargs):
+        with get_adapter().get_requests_session() as sess:
+            resp = sess.get(
+                self.profile_url,
+                headers={'Authorization': f'Bearer {token.token}'},
+                timeout=10,
+            )
+
+        if not resp.ok:
+            detail = ''
+            try:
+                payload = resp.json()
+                error = payload.get('error')
+                if isinstance(error, dict):
+                    detail = error.get('message', '')
+                elif isinstance(error, str):
+                    detail = error
+            except ValueError:
+                detail = resp.text[:200]
+
+            logger.error(
+                'Spotify profile request failed: status=%s detail=%s',
+                resp.status_code,
+                detail or '(no message)',
+            )
+            raise OAuth2Error(detail or f'Spotify returned {resp.status_code}.')
+
+        extra_data = resp.json()
+        if 'id' not in extra_data:
+            logger.error('Spotify profile had no id. keys=%s', sorted(extra_data))
+            raise OAuth2Error('Spotify did not return an account id.')
+
+        return self.get_provider().sociallogin_from_response(request, extra_data)
 
 
 class SpotifySocialAdapter(DefaultSocialAccountAdapter):
